@@ -1,0 +1,525 @@
+name: .NET Docker
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: main
+      - name: 'Preparing Frontend checkout'
+        uses: actions/checkout@v3
+        with:
+          repository: microting/eform-angular-frontend
+          ref: stable
+          path: eform-angular-frontend
+      - name: Build Docker image
+        id: build
+        run: cd eform-angular-frontend && docker build . -t microtingas/frontend-container:latest --build-arg GITVERSION=1.0.0
+        shell: bash
+      - run: docker save microtingas/frontend-container:latest -o container.tar
+      - uses: actions/upload-artifact@v2
+        with:
+          name: container
+          path: container.tar
+  frontend-test:
+    needs: frontend-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [a,b,c,d,e,f,g,h,i,j]
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - name: 'Preparing Frontend checkout'
+      uses: actions/checkout@v3
+      with:
+        repository: microting/eform-angular-frontend
+        ref: stable
+        path: eform-angular-frontend
+    - name: Cache node_modules
+      id: cache
+      uses: actions/cache@v3
+      with:
+        path: eform-angular-frontend/eform-client/node_modules
+        key: ${{ runner.os }}-build-${{ hashFiles('eform-angular-frontend/eform-client/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - uses: actions/download-artifact@v3
+      with:
+        name: container
+    - run: docker load -i container.tar
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge --attachable data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Start rabbitmq
+      run: |
+        docker pull rabbitmq:latest
+        docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 20
+    - name: yarn install
+      run: cd eform-angular-frontend/eform-client && yarn install
+      if: steps.cache.outputs.cache-hit != 'true'
+    - name: Create errorShots directory
+      run: mkdir eform-angular-frontend/eform-client/errorShots
+    - name: Start the newly build Docker container
+      id: docker-run
+      run: docker run --name my-container -p 4200:5000 --network data microtingas/frontend-container:latest "/ConnectionString=host=mariadbtest;Database=420_Angular;user=root;password=secretpassword;port=3306;Convert Zero Datetime = true;SslMode=none;" > docker_run_log 2>&1 &
+    - name: Sleep 15 seconds
+      run: sleep 15
+    - name: Get standard output
+      run: cat docker_run_log
+    - name: Pretest changes to work with Docker container
+      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/e2e/Constants/DatabaseConfigurationConstants.ts
+    - name: Get standard output
+      run: |
+        cat docker_run_log
+    - name: DB Configuration
+      uses: cypress-io/github-action@v4
+      with:
+        start: echo 'hi'
+        wait-on: "http://localhost:4200"
+        wait-on-timeout: 120
+        browser: chrome
+        record: false
+        spec: cypress/e2e/db/*
+        config-file: cypress.config.ts
+        working-directory: eform-angular-frontend/eform-client
+        command-prefix: "--"
+    - name: testheadless2${{matrix.test}}
+      run: cd eform-angular-frontend/eform-client && npm run testheadless2${{matrix.test}}
+    - name: Stop the newly build Docker container
+      run: docker stop my-container
+    - name: Get standard output
+      run: |
+        cat docker_run_log
+        result=`cat docker_run_log | grep "Now listening on: http://0.0.0.0:5000" -m 1 | wc -l`
+        if [ $result -ne 1 ];then exit 1; fi
+    - name: The job has failed
+      if: ${{ failure() }}
+      run: |
+        cat docker_run_log
+    - name: Archive screenshot artifacts
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: error Screenshots
+        path: |
+          /home/runner/work/work-trash-inspection-container/work-trash-inspection-container/eform-angular-frontend/errorShots/chrome*.png
+        retention-days: 2
+  frontend-test-dotnet:
+    needs: frontend-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - name: 'Preparing Frontend checkout'
+      uses: actions/checkout@v3
+      with:
+        repository: microting/eform-angular-frontend
+        ref: stable
+        path: eform-angular-frontend
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge --attachable data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Start rabbitmq
+      run: |
+        docker pull rabbitmq:latest
+        docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: Install dependencies
+      run: dotnet restore eform-angular-frontend/eFormAPI/eFormAPI.sln
+    - name: Build
+      run: dotnet build eform-angular-frontend/eFormAPI/eFormAPI.sln
+    - name: Unit Tests
+      run: dotnet test --no-restore -c Release -v n eform-angular-frontend/eFormAPI/eFormAPI.Web.Tests/eFormAPI.Web.Tests.csproj
+    - name: Integration Tests
+      run: dotnet test --no-restore -c Release -v n eform-angular-frontend/eFormAPI/eFormAPI.Web.Integration.Tests/eFormAPI.Web.Integration.Tests.csproj
+  trash-inspection-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: main
+      - name: 'Preparing outer inner resource checkout'
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          repository: microting/eform-angular-trash-inspection-plugin
+          ref: stable
+          path: eform-angular-trash-inspection-plugin
+      - name: 'Preparing Frontend checkout'
+        uses: actions/checkout@v2
+        with:
+          repository: microting/eform-angular-frontend
+          ref: stable
+          path: eform-angular-frontend
+      - name: Copy dependencies
+        run: |
+          cp -av eform-angular-trash-inspection-plugin/eform-client/src/app/plugins/modules/trash-inspection-pn eform-angular-frontend/eform-client/src/app/plugins/modules/trash-inspection-pn
+          cd eform-angular-frontend/eform-client && ../../eform-angular-trash-inspection-plugin/testinginstallpn.sh
+      - name: Copy Dockerfile
+        run: cp main/Dockerfile .
+      - name: Build Docker image
+        id: build
+        run: |
+          pwd
+          ls -lah
+          docker build . -t microtingas/trash-inspection-container:latest --build-arg GITVERSION=1.0.0 --build-arg PLUGINVERSION=1.0.0
+        shell: bash
+      - run: docker save microtingas/trash-inspection-container:latest -o trash-inspection-container.tar
+      - uses: actions/upload-artifact@v2
+        with:
+          name: trash-inspection-container
+          path: trash-inspection-container.tar
+  trash-inspection-test:
+    needs: trash-inspection-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - uses: actions/download-artifact@v3
+      with:
+        name: trash-inspection-container
+    - run: docker load -i trash-inspection-container.tar
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge --attachable data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Start rabbitmq
+      run: |
+        docker pull rabbitmq:latest
+        docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Sleep 15
+      run: sleep 15
+    - name: Start the newly build Docker container
+      id: docker-run
+      run: docker run --name my-container -p 4200:5000 --network data microtingas/trash-inspection-container:latest "/ConnectionString=host=mariadbtest;Database=420_Angular;user=root;password=secretpassword;port=3306;Convert Zero Datetime = true;SslMode=none;" > docker_run_log 2>&1 &
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 20
+    - name: 'Preparing Frontend checkout'
+      uses: actions/checkout@v2
+      with:
+        repository: microting/eform-angular-frontend
+        ref: stable
+        path: eform-angular-frontend
+    - name: 'Preparing outer inner resource checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-angular-trash-inspection-plugin
+        ref: stable
+        path: eform-angular-trash-inspection-plugin
+    - name: Cache node_modules
+      id: cache
+      uses: actions/cache@v3
+      with:
+        path: eform-angular-frontend/eform-client/node_modules
+        key: ${{ runner.os }}-build-${{ hashFiles('eform-angular-frontend/eform-client/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - name: Copy dependencies
+      run: |
+        cp -av eform-angular-trash-inspection-plugin/eform-client/src/app/plugins/modules/trash-inspection-pn eform-angular-frontend/eform-client/src/app/plugins/modules/trash-inspection-pn
+        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Tests/trash-inspection-settings eform-angular-frontend/eform-client/e2e/Tests/trash-inspection-settings
+        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Tests/trash-inspection-general eform-angular-frontend/eform-client/e2e/Tests/trash-inspection-general
+        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Page\ objects/trash-inspection eform-angular-frontend/eform-client/e2e/Page\ objects/trash-inspection
+        cp -av eform-angular-trash-inspection-plugin/eform-client/wdio-headless-plugin-step2.conf.ts eform-angular-frontend/eform-client/wdio-headless-plugin-step2.conf.ts
+        #mkdir -p eform-angular-frontend/eFormAPI/eFormAPI.Web/Plugins
+        #cp -av eform-angular-trash-inspection-plugin/eFormAPI/eFormAPI.Web/Plugins/trash-inspection eform-angular-frontend/eFormAPI/eFormAPI.Web/Plugins/trash-inspection
+        cd eform-angular-frontend/eform-client && ../../eform-angular-trash-inspection-plugin/testinginstallpn.sh
+    - name: yarn install
+      run: cd eform-angular-frontend/eform-client && yarn install
+      if: steps.cache.outputs.cache-hit != 'true'
+    - name: Create errorShots directory
+      run: mkdir eform-angular-frontend/eform-client/errorShots
+    - name: Sleep 15 seconds
+      run: sleep 15
+    - name: Get standard output
+      run: cat docker_run_log
+    - name: Pretest changes to work with Docker container
+      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/e2e/Constants/DatabaseConfigurationConstants.ts
+    - name: Get standard output
+      run: |
+        cat docker_run_log
+    - name: DB Configuration
+      uses: cypress-io/github-action@v4
+      with:
+        start: echo 'hi'
+        wait-on: "http://localhost:4200"
+        wait-on-timeout: 120
+        browser: chrome
+        record: false
+        spec: cypress/e2e/db/*
+        config-file: cypress.config.ts
+        working-directory: eform-angular-frontend/eform-client
+        command-prefix: "--"
+    - name: Change rabbitmq hostname
+      run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_SDK.Settings set Value = "my-rabbit" where Name = "rabbitMqHost"'
+    - name: Plugin testing
+      run: cd eform-angular-frontend/eform-client && npm run testheadlessplugin
+    - name: The job has failed
+      if: ${{ failure() }}
+      run: |
+        cat docker_run_log
+    - name: Archive screenshot artifacts
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: error Screenshots
+        path: |
+          eform-angular-frontend/eform-client/errorShots/chrome*.png
+        retention-days: 2
+  trash-inspection-test-dotnet:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - name: 'Preparing outer inner resource checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-angular-trash-inspection-plugin
+        ref: stable
+        path: eform-angular-trash-inspection-plugin
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge --attachable data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Sleep 15
+      run: sleep 15
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: Build
+      run: dotnet build eform-angular-trash-inspection-plugin/eFormAPI/Plugins/trash-inspection.Pn/trash-inspection.Pn.sln
+    - name: Unit Tests
+      run: dotnet test --no-restore -c Release -v n eform-angular-trash-inspection-plugin/eFormAPI/Plugins/trash-inspection.Pn/trash-inspection.Pn.Test/trash-inspection.Pn.Test.csproj
+  service-build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Preparing debian-service checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-debian-service
+        ref: stable
+        path: eform-debian-service
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: Install dependencies
+      run: dotnet restore eform-debian-service
+    - name: Build
+      run: dotnet build --configuration Release --no-restore eform-debian-service
+    - name: Test
+      run: dotnet test --no-restore --verbosity normal eform-debian-service
+  trash-inspection-service-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - name: 'Preparing Frontend checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-debian-service
+        ref: stable
+        path: eform-debian-service
+    - name: 'Preparing outer inner resource checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-service-trash-inspection-plugin
+        ref: stable
+        path: eform-service-trash-inspection-plugin
+    - name: Get the version release
+      id: get_release_version
+      run: echo ::set-output name=VERSION::$(cd main && git describe --abbrev=0 --tags | cut -d "v" -f 2)
+    - name: Get the version
+      id: get_version
+      run: echo ::set-output name=VERSION::$(cd eform-service-trash-inspection-plugin && git describe --abbrev=0 --tags | cut -d "v" -f 2)
+    - name: Get the service version
+      id: get_service_version
+      run: echo ::set-output name=FRONTENDVERSION::$(cd eform-debian-service && git describe --abbrev=0 --tags | cut -d "v" -f 2)
+    - name: Copy Docker file
+      run: cp main/Dockerfile-service Dockerfile
+    - name: Build the tagged Docker image
+      run: docker build . -t microtingas/trash-inspection-service-container:latest -t microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }} --build-arg GITVERSION=${{ steps.get_service_version.outputs.FRONTENDVERSION }} --build-arg PLUGINVERSION=${{ steps.get_version.outputs.VERSION }}
+    - name: Tag builds
+      run: |-
+        docker tag microtingas/trash-inspection-service-container:latest microtingas/trash-inspection-service-container:latest
+        docker tag microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }} microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }}
+    - run: docker save microtingas/trash-inspection-service-container:latest -o trash-inspection-service-container.tar
+    - uses: actions/upload-artifact@v2
+      with:
+        name: trash-inspection-service-container
+        path: trash-inspection-service-container.tar
+  trash-inspection-service-test:
+    needs: [trash-inspection-service-build]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - uses: actions/download-artifact@v3
+      with:
+        name: trash-inspection-service-container
+    - run: docker load -i trash-inspection-service-container.tar
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Start rabbitmq
+      run: |
+        docker pull rabbitmq:latest
+        docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Change rabbitmq hostname
+      run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_SDK.Settings set Value = "my-rabbit" where Name = "rabbitMqHost"'
+    - name: Start the newly build Docker container
+      id: docker-run
+      run: docker run --name my-container --network data microtingas/trash-inspection-service-container:latest "/ConnectionString=host=mariadbtest;Database=420_SDK;user=root;password=secretpassword;port=3306;Convert Zero Datetime = true;SslMode=none;" > docker_run_log 2>&1 &
+    - name: Sleep 75 seconds for letting the container start and generate some output we can
+      run: sleep 75
+    - name: Get standard output
+      run: cat docker_run_log
+    - name: Stop the newly build Docker container
+      run: docker stop my-container
+    - name: Get standard output
+      run: |
+        cat docker_run_log
+        result=`cat docker_run_log | grep "No messages for us right now!" -m 1 | wc -l`
+        if [ $result -ne 1 ];then exit 1; fi
+    - name: The job has failed
+      if: ${{ failure() }}
+      run: |
+        cat dotnet_log
+        cat eform-angular-frontend/eform-client/npm_log
+        cat docker_run_log
+  trash-inspection-service-dotnet-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - name: Create docker network 🖧
+      run: docker network create --driver bridge data
+    - name: Start MariaDB
+      run: |
+        docker pull mariadb:10.8
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:latest
+    - name: Start rabbitmq
+      run: |
+        docker pull rabbitmq:latest
+        docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: 'Preparing outer inner resource checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        repository: microting/eform-service-trash-inspection-plugin
+        ref: stable
+        path: eform-service-trash-inspection-plugin
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: Install dependencies
+      run: dotnet restore eform-service-trash-inspection-plugin
+    - name: Build
+      run: dotnet build eform-service-trash-inspection-plugin --configuration Release --no-restore
+    - name: Unit Tests
+      run: dotnet test --no-restore -c Release -v n eform-service-trash-inspection-plugin/Servicetrash-inspectionPlugin.Integration.Test/Servicetrash-inspectionPlugin.Integration.Test.csproj
+  deploy:
+    needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - uses: actions/download-artifact@v3
+      with:
+        name: trash-inspection-container
+    - run: docker load -i trash-inspection-container.tar    
+    - name: Get the version release
+      id: get_release_version
+      run: echo ::set-output name=VERSION::$(cd main && git describe --abbrev=0 --tags | cut -d "v" -f 2)
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Tag builds
+      run: |-
+        docker tag microtingas/trash-inspection-container:latest microtingas/trash-inspection-container:latest
+        docker tag microtingas/trash-inspection-container:latest microtingas/trash-inspection-container:${{ steps.get_release_version.outputs.VERSION }}
+    - name: Push the version Docker image
+      run: docker push microtingas/trash-inspection-container:${{ steps.get_release_version.outputs.VERSION }}
+    - name: Push the tagged Docker image
+      run: docker push microtingas/trash-inspection-container:latest
+    - name: Image digest
+      run: echo ${{ steps.docker_build.outputs.digest }}
+  deploy-service:
+    needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: main
+    - uses: actions/download-artifact@v3
+      with:
+        name: trash-inspection-service-container
+    - run: docker load -i trash-inspection-service-container.tar
+    - name: Get the version release
+      id: get_release_version
+      run: echo ::set-output name=VERSION::$(cd main && git describe --abbrev=0 --tags | cut -d "v" -f 2)
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Tag builds
+      run: |-
+        docker tag microtingas/trash-inspection-service-container:latest microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }}
+    - name: Push the tagged Docker image
+      run: docker push microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }}
+    - name: Push the latest Docker image
+      run: docker push microtingas/trash-inspection-service-container:latest
+    - name: Image digest
+      run: echo ${{ steps.docker_build.outputs.digest }}
