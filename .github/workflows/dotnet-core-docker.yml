@@ -325,9 +325,9 @@ jobs:
       with:
         dotnet-version: 8.0.x
     - name: Build
-      run: dotnet build eform-angular-trash-inspection-plugin/eFormAPI/Plugins/trash-inspection.Pn/trash-inspection.Pn.sln
+      run: dotnet build eform-angular-trash-inspection-plugin/eFormAPI/Plugins/TrashInspection.Pn/TrashInspection.Pn.sln
     - name: Unit Tests
-      run: dotnet test --no-restore -c Release -v n eform-angular-trash-inspection-plugin/eFormAPI/Plugins/trash-inspection.Pn/trash-inspection.Pn.Test/trash-inspection.Pn.Test.csproj
+      run: dotnet test --no-restore -c Release -v n eform-angular-trash-inspection-plugin/eFormAPI/Plugins/TrashInspection.Pn/TrashInspection.Pn.Test/TrashInspection.Pn.Test.csproj
   service-build:
     runs-on: ubuntu-latest
     steps:
