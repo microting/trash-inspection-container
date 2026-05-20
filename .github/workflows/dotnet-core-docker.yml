@@ -9,11 +9,11 @@ jobs:
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           path: main
       - name: 'Preparing Frontend checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: microting/eform-angular-frontend
           ref: stable
@@ -23,7 +23,7 @@ jobs:
         run: cd eform-angular-frontend && docker build . -t microtingas/frontend-container:latest --build-arg GITVERSION=1.0.0
         shell: bash
       - run: docker save microtingas/frontend-container:latest -o container.tar
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: container
           path: container.tar
@@ -35,11 +35,11 @@ jobs:
       matrix:
         test: [a,b,c,d,e,f,g,h,i,j]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
     - name: 'Preparing Frontend checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: microting/eform-angular-frontend
         ref: stable
@@ -53,7 +53,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: container
     - run: docker load -i container.tar
@@ -61,8 +61,8 @@ jobs:
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
@@ -70,7 +70,7 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: 20
+        node-version: 22
     - name: yarn install
       run: cd eform-angular-frontend/eform-client && yarn install
       if: steps.cache.outputs.cache-hit != 'true'
@@ -115,9 +115,9 @@ jobs:
         cat docker_run_log
     - name: Archive screenshot artifacts
       if: ${{ failure() }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: error Screenshots
+        name: error-Screenshots-frontend-${{matrix.test}}
         path: |
           /home/runner/work/work-trash-inspection-container/work-trash-inspection-container/eform-angular-frontend/errorShots/chrome*.png
         retention-days: 2
@@ -125,11 +125,11 @@ jobs:
     needs: frontend-build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
     - name: 'Preparing Frontend checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: microting/eform-angular-frontend
         ref: stable
@@ -138,8 +138,8 @@ jobs:
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
@@ -147,7 +147,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Install dependencies
       run: dotnet restore eform-angular-frontend/eFormAPI/eFormAPI.sln
     - name: Build
@@ -159,18 +159,18 @@ jobs:
   trash-inspection-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           path: main
       - name: 'Preparing trash inspection checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           repository: microting/eform-angular-trash-inspection-plugin
           ref: stable
           path: eform-angular-trash-inspection-plugin
       - name: 'Preparing Frontend checkout'
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: microting/eform-angular-frontend
           ref: stable
@@ -189,7 +189,7 @@ jobs:
           docker build . -t microtingas/trash-inspection-container:latest --build-arg GITVERSION=1.0.0 --build-arg PLUGINVERSION=1.0.0
         shell: bash
       - run: docker save microtingas/trash-inspection-container:latest -o trash-inspection-container.tar
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: trash-inspection-container
           path: trash-inspection-container.tar
@@ -199,10 +199,10 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: trash-inspection-container
     - run: docker load -i trash-inspection-container.tar
@@ -210,8 +210,8 @@ jobs:
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
@@ -224,15 +224,15 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: 20
+        node-version: 22
     - name: 'Preparing Frontend checkout'
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         repository: microting/eform-angular-frontend
         ref: stable
         path: eform-angular-frontend
     - name: 'Preparing trash inspection checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-angular-trash-inspection-plugin
@@ -293,20 +293,20 @@ jobs:
         cat docker_run_log
     - name: Archive screenshot artifacts
       if: ${{ failure() }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: error Screenshots
+        name: error-Screenshots-trash-inspection
         path: |
           eform-angular-frontend/eform-client/errorShots/chrome*.png
         retention-days: 2
   trash-inspection-test-dotnet:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
     - name: 'Preparing trash inspection checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-angular-trash-inspection-plugin
@@ -316,14 +316,14 @@ jobs:
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Sleep 15
       run: sleep 15
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Build
       run: dotnet build eform-angular-trash-inspection-plugin/eFormAPI/Plugins/TrashInspection.Pn/TrashInspection.Pn.sln
     - name: Unit Tests
@@ -332,7 +332,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 'Preparing debian-service checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-debian-service
@@ -341,7 +341,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Install dependencies
       run: dotnet restore eform-debian-service
     - name: Build
@@ -351,18 +351,18 @@ jobs:
   trash-inspection-service-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
     - name: 'Preparing Frontend checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-debian-service
         ref: stable
         path: eform-debian-service
     - name: 'Preparing trash inspection checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-service-trash-inspection-plugin
@@ -386,7 +386,7 @@ jobs:
         docker tag microtingas/trash-inspection-service-container:latest microtingas/trash-inspection-service-container:latest
         docker tag microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }} microtingas/trash-inspection-service-container:${{ steps.get_release_version.outputs.VERSION }}
     - run: docker save microtingas/trash-inspection-service-container:latest -o trash-inspection-service-container.tar
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: trash-inspection-service-container
         path: trash-inspection-service-container.tar
@@ -394,10 +394,10 @@ jobs:
     needs: [trash-inspection-service-build]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: trash-inspection-service-container
     - run: docker load -i trash-inspection-service-container.tar
@@ -405,8 +405,8 @@ jobs:
       run: docker network create --driver bridge data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
@@ -440,21 +440,21 @@ jobs:
   trash-inspection-service-dotnet-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
     - name: Create docker network 🖧
       run: docker network create --driver bridge data
     - name: Start MariaDB
       run: |
-        docker pull mariadb:10.8
-        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:10.8
+        docker pull mariadb:11.7
+        docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
         docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
     - name: 'Preparing trash inspection checkout'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         repository: microting/eform-service-trash-inspection-plugin
@@ -463,7 +463,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Install dependencies
       run: dotnet restore eform-service-trash-inspection-plugin
     - name: Build
@@ -474,13 +474,13 @@ jobs:
     needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: trash-inspection-container
-    - run: docker load -i trash-inspection-container.tar    
+    - run: docker load -i trash-inspection-container.tar
     - name: Get the version release
       id: get_release_version
       run: echo ::set-output name=VERSION::$(cd main && git describe --abbrev=0 --tags | cut -d "v" -f 2)
@@ -503,10 +503,10 @@ jobs:
     needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: main
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: trash-inspection-service-container
     - run: docker load -i trash-inspection-service-container.tar
