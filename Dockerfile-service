@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS build-env
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build-env
 ARG GITVERSION
 WORKDIR /app
 ARG GITVERSION
@@ -14,14 +14,14 @@ RUN ls -lah out
 RUN ls -lah out/Plugins
 
 # Build runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble
 WORKDIR /app
 COPY --from=build-env /app/out .
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 ENV Logging__Console__FormatterName=
 
-RUN mkdir -p /usr/share/man/man1mkdir -p /usr/share/man/man1
+RUN mkdir -p /usr/share/man/man1
 RUN apt-get update && \
 	apt-get -y -q install \
 		libxml2 \
@@ -57,6 +57,8 @@ RUN apt-get update && \
 	apt -y autoremove && \
 	rm -rf /var/lib/apt/lists/*
 
-RUN adduser --home=/opt/libreoffice --disabled-password --gecos "" --shell=/bin/bash libreoffice
+RUN mkdir -p /opt/libreoffice && chown -R $APP_UID:$APP_UID /app /opt/libreoffice
+ENV HOME=/opt/libreoffice
+USER $APP_UID
 
 ENTRYPOINT ["dotnet", "MicrotingService.dll"]
