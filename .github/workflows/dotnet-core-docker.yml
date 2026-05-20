@@ -390,14 +390,18 @@ jobs:
       run: |
         docker pull mariadb:11.7
         docker run --name mariadbtest --network data -e MYSQL_ROOT_PASSWORD=secretpassword -p 3306:3306 -d mariadb:11.7
+    - name: Sleep 15
+      run: sleep 15
     - name: Start rabbitmq
       run: |
         docker pull rabbitmq:latest
         docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Sleep 30 seconds for letting the mariadb container start
+      run: sleep 30
     - name: Load DB dump
       run: |
-        docker exec -i mariadbtest mariadb -h 127.0.0.1 -u root --password=secretpassword -e 'create database `420_SDK`'
-        docker exec -i mariadbtest mariadb -h 127.0.0.1 -u root --password=secretpassword 420_SDK < main/420_SDK.sql
+        docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'create database `420_SDK`'
+        docker exec -i mariadbtest mariadb -u root --password=secretpassword 420_SDK < main/420_SDK.sql
     - name: Change rabbitmq hostname
       run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_SDK.Settings set Value = "my-rabbit" where Name = "rabbitMqHost"'
     - name: Start the newly build Docker container
