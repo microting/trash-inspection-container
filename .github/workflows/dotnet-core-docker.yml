@@ -27,7 +27,7 @@ jobs:
         with:
           name: container
           path: container.tar
-  frontend-test:
+  frontend-playwright-test:
     needs: frontend-build
     runs-on: ubuntu-latest
     strategy:
@@ -44,20 +44,11 @@ jobs:
         repository: microting/eform-angular-frontend
         ref: stable
         path: eform-angular-frontend
-    - name: Cache node_modules
-      id: cache
-      uses: actions/cache@v3
-      with:
-        path: eform-angular-frontend/eform-client/node_modules
-        key: ${{ runner.os }}-build-${{ hashFiles('eform-angular-frontend/eform-client/package.json') }}
-        restore-keys: |
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
     - uses: actions/download-artifact@v4
       with:
         name: container
     - run: docker load -i container.tar
-    - name: Create docker network 🖧
+    - name: Create docker network
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
@@ -67,15 +58,16 @@ jobs:
       run: |
         docker pull rabbitmq:latest
         docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
+    - name: Sleep 30 seconds for letting the mariadb container start
+      run: sleep 30
     - name: Use Node.js
       uses: actions/setup-node@v3
       with:
         node-version: 22
     - name: yarn install
       run: cd eform-angular-frontend/eform-client && yarn install
-      if: steps.cache.outputs.cache-hit != 'true'
-    - name: Create errorShots directory
-      run: mkdir eform-angular-frontend/eform-client/errorShots
+    - name: Install Playwright browsers
+      run: cd eform-angular-frontend/eform-client && npx playwright install --with-deps chromium
     - name: Start the newly build Docker container
       id: docker-run
       run: docker run --name my-container -p 4200:5000 --network data microtingas/frontend-container:latest "/ConnectionString=host=mariadbtest;Database=420_Angular;user=root;password=secretpassword;port=3306;Convert Zero Datetime = true;SslMode=none;" > docker_run_log 2>&1 &
@@ -84,42 +76,34 @@ jobs:
     - name: Get standard output
       run: cat docker_run_log
     - name: Pretest changes to work with Docker container
-      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/e2e/Constants/DatabaseConfigurationConstants.ts
-    - name: Get standard output
-      run: |
-        cat docker_run_log
+      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/playwright/e2e/Constants/DatabaseConfigurationConstants.ts
     - name: DB Configuration
-      uses: cypress-io/github-action@v4
-      with:
-        start: echo 'hi'
-        wait-on: "http://localhost:4200"
-        wait-on-timeout: 120
-        browser: chrome
-        record: false
-        spec: cypress/e2e/db/*
-        config-file: cypress.config.ts
-        working-directory: eform-angular-frontend/eform-client
-        command-prefix: "--"
-    - name: testheadless2${{matrix.test}}
-      run: cd eform-angular-frontend/eform-client && npm run testheadless2${{matrix.test}}
+      run: |
+        cd eform-angular-frontend/eform-client
+        npx playwright test playwright/e2e/Tests/database-configuration/
+    - name: Wait for app
+      run: npx wait-on http://localhost:4200 --timeout 120000
+    - name: ${{matrix.test}} playwright test
+      run: |
+        cd eform-angular-frontend/eform-client
+        npx playwright test playwright/e2e/Tests/${{matrix.test}}/
     - name: Stop the newly build Docker container
       run: docker stop my-container
     - name: Get standard output
       run: |
         cat docker_run_log
-        result=`cat docker_run_log | grep "Now listening on: http://0.0.0.0:5000" -m 1 | wc -l`
+        result=`cat docker_run_log | grep "Now listening on:" -m 1 | wc -l`
         if [ $result -ne 1 ];then exit 1; fi
     - name: The job has failed
       if: ${{ failure() }}
       run: |
         cat docker_run_log
-    - name: Archive screenshot artifacts
-      if: ${{ failure() }}
+    - name: Archive Playwright report
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: error-Screenshots-frontend-${{matrix.test}}
-        path: |
-          /home/runner/work/work-trash-inspection-container/work-trash-inspection-container/eform-angular-frontend/errorShots/chrome*.png
+        name: playwright-report-frontend-${{matrix.test}}
+        path: eform-angular-frontend/eform-client/playwright-report/
         retention-days: 2
   frontend-test-dotnet:
     needs: frontend-build
@@ -193,20 +177,29 @@ jobs:
         with:
           name: trash-inspection-container
           path: trash-inspection-container.tar
-  trash-inspection-test:
+  trash-inspection-playwright-test:
     needs: trash-inspection-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
+      matrix:
+        test: [a,b,c,d]
     steps:
     - uses: actions/checkout@v4
       with:
         path: main
+    - name: 'Preparing trash inspection checkout'
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        repository: microting/eform-angular-trash-inspection-plugin
+        ref: stable
+        path: eform-angular-trash-inspection-plugin
     - uses: actions/download-artifact@v4
       with:
         name: trash-inspection-container
     - run: docker load -i trash-inspection-container.tar
-    - name: Create docker network 🖧
+    - name: Create docker network
       run: docker network create --driver bridge --attachable data
     - name: Start MariaDB
       run: |
@@ -231,73 +224,63 @@ jobs:
         repository: microting/eform-angular-frontend
         ref: stable
         path: eform-angular-frontend
-    - name: 'Preparing trash inspection checkout'
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        repository: microting/eform-angular-trash-inspection-plugin
-        ref: stable
-        path: eform-angular-trash-inspection-plugin
-    - name: Cache node_modules
-      id: cache
-      uses: actions/cache@v3
-      with:
-        path: eform-angular-frontend/eform-client/node_modules
-        key: ${{ runner.os }}-build-${{ hashFiles('eform-angular-frontend/eform-client/package.json') }}
-        restore-keys: |
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
     - name: Copy dependencies
       run: |
         cp -av eform-angular-trash-inspection-plugin/eform-client/src/app/plugins/modules/trash-inspection-pn eform-angular-frontend/eform-client/src/app/plugins/modules/trash-inspection-pn
-        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Tests/trash-inspections-settings eform-angular-frontend/eform-client/e2e/Tests/trash-inspections-settings
-        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Tests/trash-inspection-general eform-angular-frontend/eform-client/e2e/Tests/trash-inspection-general
-        cp -av eform-angular-trash-inspection-plugin/eform-client/e2e/Page\ objects/trash-inspection eform-angular-frontend/eform-client/e2e/Page\ objects/trash-inspection
-        cp -av eform-angular-trash-inspection-plugin/eform-client/wdio-headless-plugin-step2.conf.ts eform-angular-frontend/eform-client/wdio-headless-plugin-step2.conf.ts
-        #mkdir -p eform-angular-frontend/eFormAPI/eFormAPI.Web/Plugins
-        #cp -av eform-angular-trash-inspection-plugin/eFormAPI/eFormAPI.Web/Plugins/trash-inspection eform-angular-frontend/eFormAPI/eFormAPI.Web/Plugins/trash-inspection
+        mkdir -p eform-angular-frontend/eform-client/playwright/e2e/plugins/
+        cp -av eform-angular-trash-inspection-plugin/eform-client/playwright/e2e/plugins/trash-inspection-pn eform-angular-frontend/eform-client/playwright/e2e/plugins/trash-inspection-pn
+        cp -av eform-angular-trash-inspection-plugin/eform-client/playwright.config.ts eform-angular-frontend/eform-client/playwright.config.ts
         cd eform-angular-frontend/eform-client && ../../eform-angular-trash-inspection-plugin/testinginstallpn.sh
     - name: yarn install
       run: cd eform-angular-frontend/eform-client && yarn install
-      if: steps.cache.outputs.cache-hit != 'true'
-    - name: Create errorShots directory
-      run: mkdir eform-angular-frontend/eform-client/errorShots
-    - name: Sleep 15 seconds
-      run: sleep 15
+    - name: Install Playwright browsers
+      run: cd eform-angular-frontend/eform-client && npx playwright install --with-deps chromium
+    - name: Pretest changes to work with Docker container
+      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/playwright/e2e/Constants/DatabaseConfigurationConstants.ts
     - name: Get standard output
       run: cat docker_run_log
-    - name: Pretest changes to work with Docker container
-      run: sed -i 's/localhost/mariadbtest/g' eform-angular-frontend/eform-client/e2e/Constants/DatabaseConfigurationConstants.ts
+    - name: DB Configuration
+      run: |
+        cd eform-angular-frontend/eform-client
+        npx playwright test playwright/e2e/Tests/database-configuration/
+    - name: Disable plugin for settings test
+      if: matrix.test == 'a'
+      run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_Angular.EformPlugins set Status = 1'
+    - name: Change rabbitmq hostname
+      if: matrix.test != 'a'
+      run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_SDK.Settings set Value = "my-rabbit" where Name = "rabbitMqHost"'
+    - name: Enable plugins
+      if: matrix.test != 'a'
+      run: |
+        docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_Angular.EformPlugins set Status = 2'
+        docker restart my-container
+        sleep 15
     - name: Get standard output
       run: |
-        cat docker_run_log
-    - name: DB Configuration
-      uses: cypress-io/github-action@v4
-      with:
-        start: echo 'hi'
-        wait-on: "http://localhost:4200"
-        wait-on-timeout: 120
-        browser: chrome
-        record: false
-        spec: cypress/e2e/db/*
-        config-file: cypress.config.ts
-        working-directory: eform-angular-frontend/eform-client
-        command-prefix: "--"
-    - name: Change rabbitmq hostname
-      run: docker exec -i mariadbtest mariadb -u root --password=secretpassword -e 'update 420_SDK.Settings set Value = "my-rabbit" where Name = "rabbitMqHost"'
-    - name: Plugin testing
-      run: cd eform-angular-frontend/eform-client && npm run testheadlessplugin
+        docker logs my-container
+        docker ps -a
+    - name: Wait for app
+      run: npx wait-on http://localhost:4200 --timeout 120000
+    - name: Run Playwright test
+      run: |
+        cd eform-angular-frontend/eform-client
+        npx playwright test playwright/e2e/plugins/trash-inspection-pn/${{matrix.test}}/
+    - name: Stop the newly build Docker container
+      run: docker stop my-container
+    - name: Get standard output
+      run: |
+        docker logs my-container
+        docker ps -a
     - name: The job has failed
       if: ${{ failure() }}
       run: |
         cat docker_run_log
-    - name: Archive screenshot artifacts
+    - name: Archive Playwright report
       if: ${{ failure() }}
       uses: actions/upload-artifact@v4
       with:
-        name: error-Screenshots-trash-inspection
-        path: |
-          eform-angular-frontend/eform-client/errorShots/chrome*.png
+        name: playwright-report-trash-inspection-${{matrix.test}}
+        path: eform-angular-frontend/eform-client/playwright-report/
         retention-days: 2
   trash-inspection-test-dotnet:
     runs-on: ubuntu-latest
@@ -471,7 +454,7 @@ jobs:
     - name: Unit Tests
       run: dotnet test --no-restore -c Release -v n eform-service-trash-inspection-plugin/ServiceTrashInspectionPlugin.Integration.Test/ServiceTrashInspectionPlugin.Integration.Test.csproj
   deploy:
-    needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
+    needs: [frontend-build, trash-inspection-playwright-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -500,7 +483,7 @@ jobs:
     - name: Image digest
       run: echo ${{ steps.docker_build.outputs.digest }}
   deploy-service:
-    needs: [frontend-build, trash-inspection-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
+    needs: [frontend-build, trash-inspection-playwright-test, trash-inspection-test-dotnet, service-build, trash-inspection-service-test, trash-inspection-service-dotnet-test]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
