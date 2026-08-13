@@ -33,6 +33,7 @@ ENV Logging__Console__FormatterName=
 RUN mkdir -p /usr/share/man/man1
 RUN apt-get update && \
 	apt-get -y -q install \
+		gss-ntlmssp \
 		libxml2 \
 		libgdiplus \
 		libc6-dev \
@@ -68,6 +69,17 @@ RUN apt-get update && \
 
 RUN mkdir -p /opt/libreoffice && chown -R $APP_UID:$APP_UID /app /opt/libreoffice
 ENV HOME=/opt/libreoffice
+
+# .NET's HttpClient performs NTLM auth via GSSAPI (gss-ntlmssp, installed above). NTLM's
+# crypto primitives (MD4/RC4/DES) live in OpenSSL 3's "legacy" provider, which Ubuntu Noble
+# does not activate by default -- without it AcquireCredentialsHandle fails with a "Crypto
+# routine failure" and the NAV NTLM callback returns 401. Activate the legacy provider
+# alongside the default one (via .include so the distro's TLS defaults are preserved).
+# Required here because the trash-inspection plugin can re-send an inspection to NAV from
+# the web API process, not only from the background service.
+RUN printf '.include /etc/ssl/openssl.cnf\n[provider_sect]\nlegacy = legacy_sect\n[default_sect]\nactivate = 1\n[legacy_sect]\nactivate = 1\n' > /etc/ssl/openssl-legacy.cnf
+ENV OPENSSL_CONF=/etc/ssl/openssl-legacy.cnf
+
 USER $APP_UID
 
 ENTRYPOINT ["dotnet", "eFormAPI.Web.dll"]
