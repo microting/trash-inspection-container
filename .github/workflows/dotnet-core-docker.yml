@@ -29,7 +29,7 @@ jobs:
           path: container.tar
   frontend-playwright-test:
     needs: frontend-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright cannot install chromium on ubuntu-latest (26.04) yet, see microting/eform-angular-frontend#8222
     strategy:
       fail-fast: false
       matrix:
