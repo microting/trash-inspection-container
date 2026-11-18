@@ -129,9 +129,9 @@ jobs:
         docker pull rabbitmq:latest
         docker run -d --hostname my-rabbit --name some-rabbit --network data -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password rabbitmq:latest
     - name: Setup .NET Core
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Install dependencies
       run: dotnet restore eform-angular-frontend/eFormAPI/eFormAPI.sln
     - name: Build
@@ -304,9 +304,9 @@ jobs:
     - name: Sleep 15
       run: sleep 15
     - name: Setup .NET Core
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build
       run: dotnet build eform-angular-trash-inspection-plugin/eFormAPI/Plugins/TrashInspection.Pn/TrashInspection.Pn.sln
     - name: Unit Tests
@@ -322,9 +322,9 @@ jobs:
         ref: stable
         path: eform-debian-service
     - name: Setup .NET Core
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Install dependencies
       run: dotnet restore eform-debian-service
     - name: Build
@@ -448,9 +448,9 @@ jobs:
         ref: stable
         path: eform-service-trash-inspection-plugin
     - name: Setup .NET Core
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Install dependencies
       run: dotnet restore eform-service-trash-inspection-plugin
     - name: Build
